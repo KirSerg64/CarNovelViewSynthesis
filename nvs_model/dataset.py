@@ -318,10 +318,10 @@ class NVSDataset(Dataset):
             np.clip(arr_wt0, 0, 1, out=arr_wt0)
             np.clip(arr_wt1, 0, 1, out=arr_wt1)
 
-        # Concatenate into the 21-channel input tensor
+        # Concatenate into the 18-channel input tensor
         # Order: img_t0(3), img_t1(3), depth_t0(1), depth_t1(1),
         #        warped_t0(3), warped_t1(3), mask_t0(1), mask_t1(1),
-        #        target_depth(1), alpha(1)
+        #        target_depth(1), alpha(1)  — total 18
         input_tensor = np.concatenate([
             arr_img_t0,     # 3
             arr_img_t1,     # 3

@@ -134,16 +134,6 @@ def train_phase1(args, device: torch.device):
     n_train = len(full_dataset) - n_val
     train_set, val_set = random_split(full_dataset, [n_train, n_val])
 
-    # For validation: no augment, no crop
-    val_dataset = NVSDataset(
-        data_dir=args.data_dir,
-        cache_dir=args.cache_dir,
-        crop_size=None,
-        augment=False,
-        is_train=True,
-        max_depth=args.max_depth,
-    )
-
     train_loader = DataLoader(
         train_set,
         batch_size=args.batch_size,
@@ -153,11 +143,8 @@ def train_phase1(args, device: torch.device):
         pin_memory=True,
         drop_last=True,
     )
-    # Use subset for validation speed
-    val_indices = list(range(n_val))
-    val_subset = torch.utils.data.Subset(val_dataset, val_indices)
     val_loader = DataLoader(
-        val_subset,
+        val_set,
         batch_size=1,
         shuffle=False,
         num_workers=args.num_workers,

@@ -220,7 +220,7 @@ class GeometricFlowNet(nn.Module):
     def forward(self, x: torch.Tensor):
         """
         Args:
-            x: (B, 21, H, W) concatenated input tensor (values in [0,1] for
+            x: (B, 18, H, W) concatenated input tensor (values in [0,1] for
                image channels; raw float for depth/alpha channels)
 
         Returns:

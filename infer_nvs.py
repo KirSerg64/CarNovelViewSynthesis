@@ -127,7 +127,7 @@ def load_sample(sample_dir: Path, meta: dict, max_depth: float = MAX_DEPTH, devi
     mask_t0_f = mask_t0.astype(np.float32)[np.newaxis]  # (1,H,W)
     mask_t1_f = mask_t1.astype(np.float32)[np.newaxis]
 
-    # 21-channel input
+    # 18-channel input
     input_tensor = np.concatenate([
         chw(img_t0),       # 3
         chw(img_t1),       # 3
