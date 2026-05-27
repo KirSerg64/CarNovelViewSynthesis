@@ -1,10 +1,11 @@
 """
 Model 1: GeometricFlowNet — Depth-Conditioned Coarse View Predictor.
 
-IFNet-inspired multi-scale encoder-decoder that takes 21 input channels:
+IFNet-inspired multi-scale encoder-decoder that takes 18 input channels:
   img_t0(3) | img_t1(3) | depth_t0(1) | depth_t1(1) |
   warped_t0(3) | warped_t1(3) | mask_t0(1) | mask_t1(1) |
   target_depth(1) | alpha(1)
+  Total: 3+3+1+1+3+3+1+1+1+1 = 18
 
 Outputs at multiple pyramid scales for intermediate supervision:
   - flow_t0 (2ch): displacement from target → t0 image
@@ -121,7 +122,7 @@ class GeometricFlowNet(nn.Module):
     head at each decoder level (for intermediate supervision) and a final
     full-resolution prediction.
 
-    Input channels (21 total):
+    Input channels (18 total):
         img_t0     : 3
         img_t1     : 3
         depth_t0   : 1  (normalised, 0 = invalid)
@@ -134,7 +135,7 @@ class GeometricFlowNet(nn.Module):
         alpha      : 1  (temporal interpolation scalar, broadcast to HxW)
     """
 
-    IN_CH = 21
+    IN_CH = 18  # 3+3+1+1+3+3+1+1+1+1 = 18 (see module docstring)
 
     def __init__(self, base_ch: int = 32):
         super().__init__()

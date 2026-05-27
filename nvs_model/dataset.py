@@ -143,6 +143,16 @@ class NVSDataset(Dataset):
             warped_t0, warped_t1: (H, W, 3) float32 [0,1]
             mask_t0, mask_t1:    (H, W) float32 binary validity
         """
+        sample_id = sample_dir.name
+
+        # --- Try cache first ---
+        _cache_keys = [
+            "depth_t0", "depth_t1", "target_depth",
+            "warped_t0", "warped_t1", "mask_t0", "mask_t1",
+        ]
+        cached = {k: self._load_from_cache(sample_id, k) for k in _cache_keys}
+        cache_hit = all(v is not None for v in cached.values())
+
         intr = meta["intrinsics"][target_cam]
         H = intr["height"]
         W = intr["width"]
@@ -152,53 +162,66 @@ class NVSDataset(Dataset):
         c2w_t1 = np.array(meta["poses_c2w"]["t1"][target_cam], dtype=np.float64)
         c2w_tgt = np.array(meta["poses_c2w"]["target"][target_cam], dtype=np.float64)
 
-        # --- Depth at t0 ---
+        # Always load images (not cached – small and fast)
+        img_t0 = cv2.imread(
+            str(sample_dir / "input" / "t0" / f"{target_cam}.jpg"), cv2.IMREAD_COLOR
+        )
+        img_t0 = cv2.cvtColor(img_t0, cv2.COLOR_BGR2RGB).astype(np.float32) / 255.0
+        img_t1 = cv2.imread(
+            str(sample_dir / "input" / "t1" / f"{target_cam}.jpg"), cv2.IMREAD_COLOR
+        )
+        img_t1 = cv2.cvtColor(img_t1, cv2.COLOR_BGR2RGB).astype(np.float32) / 255.0
+
+        if cache_hit:
+            return {
+                "depth_t0": cached["depth_t0"].astype(np.float32),
+                "depth_t1": cached["depth_t1"].astype(np.float32),
+                "target_depth": cached["target_depth"].astype(np.float32),
+                "warped_t0": cached["warped_t0"].astype(np.float32),
+                "warped_t1": cached["warped_t1"].astype(np.float32),
+                "mask_t0": cached["mask_t0"].astype(np.float32),
+                "mask_t1": cached["mask_t1"].astype(np.float32),
+                "img_t0": img_t0,
+                "img_t1": img_t1,
+            }
+
+        # --- Compute on-the-fly ---
+        # Depth at t0
         depth_t0 = project_lidar_to_camera(xyz_world, c2w_t0, K, W, H)[0]
         depth_t0 = densify_depth_map(depth_t0)
         depth_t0_norm = _normalise_depth(depth_t0, self.max_depth)
 
-        # --- Depth at t1 ---
+        # Depth at t1
         depth_t1 = project_lidar_to_camera(xyz_world, c2w_t1, K, W, H)[0]
         depth_t1 = densify_depth_map(depth_t1)
         depth_t1_norm = _normalise_depth(depth_t1, self.max_depth)
 
-        # --- Depth at target view ---
+        # Depth at target view
         depth_tgt = project_lidar_to_camera(xyz_world, c2w_tgt, K, W, H)[0]
         depth_tgt = densify_depth_map(depth_tgt)
         depth_tgt_norm = _normalise_depth(depth_tgt, self.max_depth)
 
-        # --- Geometric warp from t0 and t1 to target ---
-        img_t0 = cv2.imread(
-            str(sample_dir / "input" / "t0" / f"{target_cam}.jpg"), cv2.IMREAD_COLOR
-        )
-        img_t0 = cv2.cvtColor(img_t0, cv2.COLOR_BGR2RGB)
-        img_t1 = cv2.imread(
-            str(sample_dir / "input" / "t1" / f"{target_cam}.jpg"), cv2.IMREAD_COLOR
-        )
-        img_t1 = cv2.cvtColor(img_t1, cv2.COLOR_BGR2RGB)
+        # Geometric warp from t0 and t1 to target (uses uint8 images)
+        img_t0_u8 = (img_t0 * 255).astype(np.uint8)
+        img_t1_u8 = (img_t1 * 255).astype(np.uint8)
 
         warped_t0, mask_t0 = inverse_warp_same_camera(
-            img_t0, depth_t0, c2w_t0, K, c2w_tgt, K, W, H
+            img_t0_u8, depth_t0, c2w_t0, K, c2w_tgt, K, W, H
         )
         warped_t1, mask_t1 = inverse_warp_same_camera(
-            img_t1, depth_t1, c2w_t1, K, c2w_tgt, K, W, H
+            img_t1_u8, depth_t1, c2w_t1, K, c2w_tgt, K, W, H
         )
-
-        warped_t0 = warped_t0.astype(np.float32) / 255.0
-        warped_t1 = warped_t1.astype(np.float32) / 255.0
-        mask_t0 = mask_t0.astype(np.float32)
-        mask_t1 = mask_t1.astype(np.float32)
 
         return {
             "depth_t0": depth_t0_norm,
             "depth_t1": depth_t1_norm,
             "target_depth": depth_tgt_norm,
-            "warped_t0": warped_t0,
-            "warped_t1": warped_t1,
-            "mask_t0": mask_t0,
-            "mask_t1": mask_t1,
-            "img_t0": img_t0.astype(np.float32) / 255.0,
-            "img_t1": img_t1.astype(np.float32) / 255.0,
+            "warped_t0": warped_t0.astype(np.float32) / 255.0,
+            "warped_t1": warped_t1.astype(np.float32) / 255.0,
+            "mask_t0": mask_t0.astype(np.float32),
+            "mask_t1": mask_t1.astype(np.float32),
+            "img_t0": img_t0,
+            "img_t1": img_t1,
         }
 
     # ------------------------------------------------------------------

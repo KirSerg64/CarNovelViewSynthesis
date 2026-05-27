@@ -60,7 +60,6 @@ def warp_flow_mask(flow: torch.Tensor) -> torch.Tensor:
     Returns:
         mask: (B, 1, H, W) float32 in {0, 1}
     """
-    B, _C, H, W = flow.device  # not used – just for IDE
     B, _two, H, W = flow.shape
     device = flow.device
 

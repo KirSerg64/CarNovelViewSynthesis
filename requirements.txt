@@ -3,3 +3,7 @@ opencv-python-headless>=4.8
 Pillow>=9.0
 scipy>=1.10
 scikit-image>=0.20
+
+# Deep learning (two-stage NVS model)
+torch>=2.0
+torchvision>=0.15  # required for VGG perceptual loss in RefineLoss
