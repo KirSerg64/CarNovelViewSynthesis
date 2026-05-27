@@ -12,6 +12,7 @@ import json
 import sys
 from pathlib import Path
 
+import cv2
 import numpy as np
 from PIL import Image
 
@@ -67,7 +68,6 @@ def main():
 
         # Handle size mismatch
         if pred.shape != gt.shape:
-            import cv2
             pred = cv2.resize(pred, (gt.shape[1], gt.shape[0]))
 
         psnr = compute_psnr(pred, gt)

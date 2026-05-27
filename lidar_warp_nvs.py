@@ -115,7 +115,7 @@ def densify_depth_map(depth_map: np.ndarray, kernel_size: int = 7) -> np.ndarray
     """
     mask = (depth_map > 0).astype(np.uint8)
 
-    # Use multiple dilation passes with decreasing kernel sizes for smoother fill
+    # Use multiple dilation passes with increasing kernel sizes for progressive fill
     result = depth_map.copy()
     for ks in [kernel_size, kernel_size + 2, kernel_size + 4]:
         kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (ks, ks))
@@ -470,7 +470,7 @@ def render_sample(sample_dir: Path) -> np.ndarray:
     warp_confidence = np.clip(weight_sum / (weight_sum.max() + 1e-10), 0, 1)
 
     # Adaptive blend: more warping confidence → more warping weight
-    # But cap at 0.3 since temporal avg is a strong baseline
+    # Max blend weight is 0.6 since temporal avg is a strong baseline
     warp_blend_weight = 0.6 * warp_confidence[:, :, np.newaxis]
     result_float = (
         warp_blend_weight * blended +
