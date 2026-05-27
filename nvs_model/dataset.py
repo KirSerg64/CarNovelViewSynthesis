@@ -346,9 +346,18 @@ class NVSDataset(Dataset):
             if arr_gt is not None:
                 arr_gt = all_arrs[2]
 
-        # Warped blend (simple geometric fallback): alpha blend of warps
-        warp_confidence = (arr_mt0 + arr_mt1).clip(0, 1)  # union of valid regions
-        warped_blend = (1 - alpha) * arr_wt0 + alpha * arr_wt1
+        # Warped blend (simple geometric fallback): alpha blend of warps.
+        # Use slices of the (possibly cropped) input_tensor so that
+        # warp_confidence and warped_blend always have the same spatial size.
+        # Channel layout: img_t0(0-2), img_t1(3-5), dt0(6), dt1(7),
+        #                 wt0(8-10), wt1(11-13), mt0(14), mt1(15),
+        #                 tdepth(16), alpha(17)
+        arr_wt0_c = input_tensor[8:11]
+        arr_wt1_c = input_tensor[11:14]
+        arr_mt0_c = input_tensor[14:15]
+        arr_mt1_c = input_tensor[15:16]
+        warp_confidence = (arr_mt0_c + arr_mt1_c).clip(0, 1)  # union of valid regions
+        warped_blend = (1 - alpha) * arr_wt0_c + alpha * arr_wt1_c
 
         # Convert to tensors
         sample = {
@@ -371,12 +380,28 @@ class NVSDataset(Dataset):
 # ---------------------------------------------------------------------------
 
 def collate_fn(batch: list) -> dict:
-    """Default collate; strings are kept as a list."""
+    """Default collate; pads variable-size spatial tensors to the same H×W."""
     keys = batch[0].keys()
     result = {}
     for k in keys:
         vals = [b[k] for b in batch]
-        if isinstance(vals[0], torch.Tensor):
+        if isinstance(vals[0], torch.Tensor) and vals[0].dim() >= 3:
+            # Pad all tensors to the maximum H and W in this batch
+            max_h = max(v.shape[-2] for v in vals)
+            max_w = max(v.shape[-1] for v in vals)
+            if any(v.shape[-2] != max_h or v.shape[-1] != max_w for v in vals):
+                padded = []
+                for v in vals:
+                    pad_h = max_h - v.shape[-2]
+                    pad_w = max_w - v.shape[-1]
+                    # torch.nn.functional.pad pads from the last dim inward:
+                    # (left, right, top, bottom)
+                    padded.append(
+                        torch.nn.functional.pad(v, (0, pad_w, 0, pad_h))
+                    )
+                vals = padded
+            result[k] = torch.stack(vals, dim=0)
+        elif isinstance(vals[0], torch.Tensor):
             result[k] = torch.stack(vals, dim=0)
         else:
             result[k] = vals  # strings etc.
