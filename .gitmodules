@@ -1,0 +1,3 @@
+[submodule "baseline_files/baseline_ensemble/thirdparty/ECCV2022-RIFE"]
+	path = baseline_files/baseline_ensemble/thirdparty/ECCV2022-RIFE
+	url = https://github.com/hzwer/ECCV2022-RIFE

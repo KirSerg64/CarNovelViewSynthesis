@@ -2,16 +2,16 @@
 
 This dataset contains data from autonomous vehicles. The vehicle is equipped with six cameras (front, rear, two front side cameras, and two rear side cameras) and a lidar.
 
-For each sample provided:
+For each sample, the following is provided:
 
 | Data | Description |
-|--------|----------|
-| 12 images | 6 cameras × 2 time points (t0 and t1), separated by an interval of 1 or 2 seconds |
-| Dense point cloud | Aggregation of all lidar scans near t0 and t1 (~10–20 scans), coordinates in the world system |
-| Camera poses | 4×4 camera-to-world matrices for all 12 input views and the target view |
-| Camera parameters | fx, fy, cx, cy, width, height, distortion coefficients |
+|------|-------------|
+| **12 images** | 6 cameras × 2 time moments (t0 and t1), separated by 1 or 2 seconds |
+| **Dense point cloud** | Aggregation of all LiDAR sweeps between t0 and t1 (~10–20 sweeps), coordinates in world frame |
+| **Camera poses** | 4×4 camera-to-world matrices for all 12 input views and the target view |
+| **Camera intrinsics** | fx, fy, cx, cy, width, height, distortion coefficients |
 
-Goal: Given 12 input images, a point cloud, and camera poses, predict the image from a specified camera at an intermediate time point (≈ midpoint between t0 and t1).
+**Goal**: using 12 input images, the point cloud, and poses, predict the image from a specified camera at an intermediate time (≈ midpoint between t0 and t1).
 
 Metric: PSNR (Peak Signal-to-Noise Ratio) between the predicted and ground truth image.
 
@@ -82,10 +82,13 @@ dataset/
 
 **lidar.npz**
 
-Dense point cloud, collected from lidar scans in an extended window around [t0, t1]. The aggregation time range is 3× the length of the delta interval: one delta before t0, the interval [t0, t1] itself, and one delta after t1 (may be truncated earlier at scene boundaries).
-    xyz — point coordinates (N, 3), float32, in the world coordinate system
-    intensity — reflection intensity (N,), float32
-Typical size: 300k–1.5M points (depends on the duration of the interval and the environment).        
+Dense point cloud assembled from LiDAR sweeps in an extended window around `[t0, t1]`.
+The aggregation time range is 3× the interval length `delta`: one `delta` before `t0`, the interval `[t0, t1]` itself, and one `delta` after `t1` (with clamping at scene boundaries).
+
+- `xyz` — point coordinates `(N, 3)`, float32, in world frame
+- `intensity` — reflection intensity `(N,)`, float32
+
+Typical size: 300k–1.5M points (depends on interval duration and environment).      
 
 **meta.json**
 
@@ -115,34 +118,31 @@ Typical size: 300k–1.5M points (depends on the duration of the interval and th
   }
 }
 ```
-Main fields:
+Key fields:
+- `target_camera` — name of the camera for which the image must be predicted
+- `delta_s` — time interval between t0 and t1 (1.0 or 2.0 seconds)
+- `poses_c2w` — 4×4 camera-to-world matrices for each camera at each time
+- `intrinsics` — camera parameters (the same for t0, t1, and target for a given camera)
 
-    target_camera — the name of the camera for which the image needs to be predicted
-    delta_s — the time interval between t0 and t1 (1.0 or 2.0 seconds)
-    poses_c2w — camera-to-world 4×4 matrices for each camera at each time
-    intrinsics — camera parameters (same for t0, t1, and target of the same camera)
+---
 
+## Coordinate systems
 
-## **Coordinate System**
+### Cameras (poses_c2w)
+4×4 **camera-to-world** matrices. Camera axes follow **OpenCV**:
+- x → right
+- y → down
+- z → forward (into the scene)
 
-**Cameras (poses_c2w)**
+### World frame
+Based on the vehicle position at the initial scene moment:
+- x → forward (along driving direction)
+- y → left
+- z → up
 
-4×4 camera-to-world matrices. Camera axes — OpenCV:
-
-    x → right
-    y → down
-    z → forward (into the scene)
-
-World frame
-Based on the vehicle's position at the start of the scene:
-
-    x → forward (in the direction of travel)
-    y → left
-    z → up
-
-**LiDAR**
-
-Coordinates xyz in lidar.npz are in the same world coordinate system as the camera poses. The point cloud is aggregated from an extended window [t0 − delta, t1 + delta] (3× delta), and may be truncated earlier at scene boundaries. This provides denser coverage of the scene.
+### LiDAR
+`xyz` coordinates in `lidar.npz` are in the **same world frame** as camera poses.
+The cloud is aggregated from the extended window `[t0 − delta, t1 + delta]` (3× delta), with clamping at scene boundaries. This provides denser scene coverage.
 
 **Cameras**
 
@@ -155,3 +155,33 @@ Coordinates xyz in lidar.npz are in the same world coordinate system as the came
 | right_bwd | Right rear side |
 | rear | Rear |
 
+---
+
+## Visualization
+
+To inspect data (camera positions, directions, point cloud):
+
+```bash
+pip install plotly
+python3 scripts/visualize_sample.py --sample-dir dataset/samples/<sample_id>
+```
+
+This opens an interactive 3D visualization in a browser.
+
+---
+
+---
+
+## Submission format
+
+For each sample in the test split — one predicted image:
+
+```
+submission/
+└── <sample_id>/
+    └── pred.jpg
+```
+
+The `pred.jpg` image must be JPEG, RGB, and have the same resolution as GT (usually 1920×1200 for the front camera, may differ for side cameras).
+
+---

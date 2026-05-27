@@ -1,4 +1,3 @@
-data/
 submission/
 
 baseline_files.zip
@@ -9,10 +8,13 @@ __pycache__/
 *.py[cod]
 *.pyo
 *.pyd
+*.zip
 
 .venv/
 venv/
 env/
+
+hyper_tune/
 
 .ipynb_checkpoints/
 .DS_Store
