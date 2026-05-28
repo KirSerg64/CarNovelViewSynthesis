@@ -333,7 +333,7 @@ class NVSDataset(Dataset):
             arr_mt1,        # 1
             arr_tdepth,     # 1
             arr_alpha,      # 1
-        ], axis=0)  # (21, H, W)
+        ], axis=0)  # (18, H, W)
 
         # Random crop
         if self.crop_size is not None:
