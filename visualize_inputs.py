@@ -63,13 +63,14 @@ def _chw1_to_hw(t: torch.Tensor) -> np.ndarray:
 
 def visualize_sample(sample: dict, sample_idx: int, out_dir: Path, show: bool) -> None:
     """
-    Build a 2×3 grid figure for one dataset sample and either display it or
+    Build a 4×2 grid figure for one dataset sample and either display it or
     save it to `out_dir`.
 
     Grid layout:
-        [depth_t0]    [depth_t1]
-        [warped_t0]   [warped_t1]
-        [warp_mask_t0] [warp_mask_t1]
+        [depth_t0]      [depth_t1]
+        [warped_t0]     [warped_t1]
+        [warp_mask_t0]  [warp_mask_t1]
+        [target_depth]  [<empty>]
     """
     it = sample["input_tensor"]  # (18, H, W)
     sample_id = sample["sample_id"] if isinstance(sample["sample_id"], str) \
@@ -81,8 +82,9 @@ def visualize_sample(sample: dict, sample_idx: int, out_dir: Path, show: bool) -
     warped_t1    = _chw_to_hwc(it[11:14])
     warp_mask_t0 = _chw1_to_hw(it[14:15])  # (H, W)
     warp_mask_t1 = _chw1_to_hw(it[15:16])
+    target_depth = _chw1_to_hw(it[16:17])  # (H, W)
 
-    fig, axes = plt.subplots(3, 2, figsize=(12, 14))
+    fig, axes = plt.subplots(4, 2, figsize=(12, 18))
     fig.suptitle(f"Sample {sample_idx}: {sample_id}", fontsize=11, y=1.01)
 
     # Row 0: depth maps (plasma colormap, range [0, 1])
@@ -109,6 +111,13 @@ def visualize_sample(sample: dict, sample_idx: int, out_dir: Path, show: bool) -
     im3 = axes[2, 1].imshow(warp_mask_t1, cmap="gray", vmin=0.0, vmax=1.0)
     axes[2, 1].set_title("warp_mask_t1")
     fig.colorbar(im3, ax=axes[2, 1], fraction=0.046, pad=0.04)
+
+    # Row 3: target depth (plasma colormap, range [0, 1])
+    im4 = axes[3, 0].imshow(target_depth, cmap="plasma", vmin=0.0, vmax=1.0)
+    axes[3, 0].set_title("target_depth (normalised)")
+    fig.colorbar(im4, ax=axes[3, 0], fraction=0.046, pad=0.04)
+
+    axes[3, 1].set_visible(False)  # unused cell
 
     for ax in axes.flat:
         ax.axis("off")
