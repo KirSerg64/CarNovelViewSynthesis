@@ -3,6 +3,7 @@ submission/
 baseline_files.zip
 baseline_files/baseline_ensemble/train_log/*.pkl
 logs/
+output/
 
 __pycache__/
 *.py[cod]

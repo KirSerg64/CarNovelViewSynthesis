@@ -66,13 +66,13 @@ class RifeModel:
             flow2, mask2, merged2, flow_teacher2, merged_teacher2, loss_distill2 = self.flownet(imgs.flip(2).flip(3), scale_list, timestep=timestep)
             return (merged[2] + merged2[2].flip(2).flip(3)) / 2
     
-    def update(self, inputs, depths, gt, learning_rate=0, mul=1, training=True, flow_gt=None):
+    def update(self, inputs, gt, learning_rate=0, mul=1, training=True, flow_gt=None):
         for param_group in self.optimG.param_groups:
             param_group['lr'] = learning_rate
         img0 = inputs[:, :3]
         img1 = inputs[:, 3:6]
-        depth_t0 = depths[:,6:7]
-        depth_t1 = depths[:,7:8]
+        depth_t0 = inputs[:, 6:7]
+        depth_t1 = inputs[:, 7:8]
         if training:
             self.train()
         else:
