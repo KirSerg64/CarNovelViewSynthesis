@@ -117,14 +117,6 @@ device = torch.device("cuda")
 
 log_path = 'train_log'
 
-def get_learning_rate(step, total_steps):
-    if step < 2000:
-        mul = step / 2000.
-        return 3e-4 * mul
-    else:
-        mul = np.cos((step - 2000) / max(total_steps - 2000, 1) * math.pi) * 0.5 + 0.5
-        return (3e-4 - 3e-6) * mul + 3e-6
-
 def flow2rgb(flow_map_np):
     h, w, _ = flow_map_np.shape
     rgb_map = np.ones((h, w, 3)).astype(np.float32)
@@ -134,82 +126,6 @@ def flow2rgb(flow_map_np):
     rgb_map[:, :, 1] -= 0.5 * (normalized_flow_map[:, :, 0] + normalized_flow_map[:, :, 1])
     rgb_map[:, :, 2] += normalized_flow_map[:, :, 1]
     return rgb_map.clip(0, 1)
-
-
-def train(args, device: torch.device):
-    writer = SummaryWriter('train')
-    writer_val = SummaryWriter('validate')
-    step = 0
-    nr_eval = 0
-    full_dataset = IFNetDataset(
-        data_dir=args.data_dir,
-        cache_dir=args.cache_dir,
-        crop_size=(args.crop_h, args.crop_w),
-        augment=True,
-        is_train=True,
-        max_depth=args.max_depth,
-    )
-    n_val = max(1, len(full_dataset) // 5)
-    n_train = len(full_dataset) - n_val
-    train_data, val_data = random_split(full_dataset, [n_train, n_val])
-
-    train_loader = DataLoader(
-        train_data,
-        batch_size=args.batch_size,
-        shuffle=True,
-        num_workers=args.num_workers,
-        collate_fn=collate_fn,
-        pin_memory=True,
-        drop_last=True,
-    )
-    val_loader = DataLoader(
-        val_data,
-        batch_size=1,
-        shuffle=False,
-        num_workers=args.num_workers,
-        collate_fn=collate_fn,
-    )
-    model = RifeModel()
-
-    total_steps = args.epochs * len(train_loader)
-    print('training...')
-    time_stamp = time.time()
-    for epoch in range(args.epochs):
-        for i, batch in enumerate(train_loader):
-            data_time_interval = time.time() - time_stamp
-            time_stamp = time.time()
-            input_tensor = batch["input_tensor"].to(device, non_blocking=True)
-            gt = batch["gt"].to(device, non_blocking=True)
-            imgs = input_tensor[:, :6]
-            learning_rate = get_learning_rate(step, total_steps)
-            pred, info = model.update(imgs, input_tensor, gt, learning_rate, training=True)
-            train_time_interval = time.time() - time_stamp
-            time_stamp = time.time()
-            if step % 200 == 1:
-                writer.add_scalar('learning_rate', learning_rate, step)
-                writer.add_scalar('loss/l1', info['loss_l1'], step)
-                writer.add_scalar('loss/tea', info['loss_tea'], step)
-                writer.add_scalar('loss/distill', info['loss_distill'], step)
-            if step % 1000 == 1:
-                gt_np = (gt.permute(0, 2, 3, 1).detach().cpu().numpy() * 255).astype('uint8')
-                mask = (torch.cat((info['mask'], info['mask_tea']), 3).permute(0, 2, 3, 1).detach().cpu().numpy() * 255).astype('uint8')
-                pred_np = (pred.permute(0, 2, 3, 1).detach().cpu().numpy() * 255).astype('uint8')
-                merged_img = (info['merged_tea'].permute(0, 2, 3, 1).detach().cpu().numpy() * 255).astype('uint8')
-                flow0 = info['flow'].permute(0, 2, 3, 1).detach().cpu().numpy()
-                flow1 = info['flow_tea'].permute(0, 2, 3, 1).detach().cpu().numpy()
-                for j in range(min(5, gt_np.shape[0])):
-                    imgs_vis = np.concatenate((merged_img[j], pred_np[j], gt_np[j]), 1)[:, :, ::-1]
-                    writer.add_image(str(j) + '/img', imgs_vis, step, dataformats='HWC')
-                    writer.add_image(str(j) + '/flow', np.concatenate((flow2rgb(flow0[j]), flow2rgb(flow1[j])), 1), step, dataformats='HWC')
-                    writer.add_image(str(j) + '/mask', mask[j], step, dataformats='HWC')
-                writer.flush()
-            print('epoch:{} {}/{} time:{:.2f}+{:.2f} loss_l1:{:.4e}'.format(
-                epoch, i, len(train_loader), data_time_interval, train_time_interval, info['loss_l1']))
-            step += 1
-        nr_eval += 1
-        if nr_eval % 5 == 0:
-            evaluate(model, val_loader, step, writer_val)
-        model.save_model(log_path, rank=0)
 
 
 def evaluate(model, val_loader, nr_eval, writer_val):
@@ -222,9 +138,8 @@ def evaluate(model, val_loader, nr_eval, writer_val):
     for i, batch in enumerate(val_loader):
         input_tensor = batch["input_tensor"].to(device, non_blocking=True)
         gt = batch["gt"].to(device, non_blocking=True)
-        imgs = input_tensor[:, :6]
         with torch.no_grad():
-            pred, info = model.update(imgs, input_tensor, gt, training=False)
+            pred, info = model.update(input_tensor, gt, training=False)
             merged_img = info['merged_tea']
         loss_l1_list.append(info['loss_l1'].cpu().numpy())
         loss_tea_list.append(info['loss_tea'].cpu().numpy())
@@ -250,7 +165,8 @@ def evaluate(model, val_loader, nr_eval, writer_val):
     if writer_val is not None:
         writer_val.add_scalar('psnr', np.array(psnr_list).mean(), nr_eval)
         writer_val.add_scalar('psnr_teacher', np.array(psnr_list_teacher).mean(), nr_eval)
-        
+    return float(np.array(psnr_list).mean()) if psnr_list else 0.0
+
 
 # ---------------------------------------------------------------------------
 # Phase 1: Train GeometricFlowNet
@@ -258,8 +174,12 @@ def evaluate(model, val_loader, nr_eval, writer_val):
 
 def train_phase1(args, device: torch.device):
     """Train Model 1 (GeometricFlowNet) alone."""
+
+    writer = SummaryWriter('train')
+    writer_val = SummaryWriter('validate')
+
     print("\n" + "=" * 70)
-    print("PHASE 1: Training GeometricFlowNet (coarse predictor)")
+    print("Training IFnet")
     print("=" * 70)
 
     # Dataset
@@ -293,15 +213,13 @@ def train_phase1(args, device: torch.device):
     )
 
     # Model — RifeModel manages its own device and internal optimizer
-    model = RifeModel()
+    step_per_epoch = len(train_loader)
+    total_steps = args.epochs * step_per_epoch
+    model = RifeModel(total_steps=total_steps, lr=args.lr)
     print(f"  Flownet params: {sum(p.numel() for p in model.flownet.parameters()):,}")
 
     ckpt_dir = args.ckpt_dir
     ckpt_dir.mkdir(parents=True, exist_ok=True)
-    logger = Logger(args.log_dir, "phase1")
-
-    step_per_epoch = len(train_loader)
-    total_steps = args.epochs * step_per_epoch
     start_epoch = 0
     best_psnr = 0.0
 
@@ -314,43 +232,51 @@ def train_phase1(args, device: torch.device):
 
     patience = args.patience
     no_improve = 0
+    nr_eval = 0
 
     for epoch in range(start_epoch, args.epochs):
         # --- Train ---
         model.train()
         train_losses = []
         t_ep = time.time()
+        time_stamp = time.time()
         for step, batch in enumerate(train_loader):
-            global_step = epoch * step_per_epoch + step
-            lr = get_learning_rate(global_step, total_steps)
+            data_time_interval = time.time() - time_stamp
+            time_stamp = time.time()
+
             input_tensor = batch["input_tensor"].to(device, non_blocking=True)
             gt = batch["gt"].to(device, non_blocking=True)
-            imgs = input_tensor[:, :6]
 
-            pred, info = model.update(imgs, input_tensor, gt, lr, training=True)
+            pred, info = model.update(input_tensor, gt, training=True)
             train_losses.append(info['loss_l1'].item())
 
-            if step % 10 == 0:
-                print(
-                    f"  E{epoch+1:03d} S{step:04d}/{step_per_epoch:04d}"
-                    f"  l1={info['loss_l1'].item():.4f}"
-                    f"  tea={info['loss_tea'].item():.4f}"
-                    f"  lr={lr:.2e}",
-                    end="\r",
-                )
+            train_time_interval = time.time() - time_stamp
+            time_stamp = time.time()
+            if step % 100 == 1:
+                lr_now = model.optimG.param_groups[0]['lr']
+                writer.add_scalar('learning_rate', lr_now, epoch * step_per_epoch + step)
+                writer.add_scalar('loss/l1', info['loss_l1'], step)
+                writer.add_scalar('loss/tea', info['loss_tea'], step)
+                writer.add_scalar('loss/distill', info['loss_distill'], step)
+            if step % 1000 == 1:
+                gt_np = (gt.permute(0, 2, 3, 1).detach().cpu().numpy() * 255).astype('uint8')
+                mask = (torch.cat((info['mask'], info['mask_tea']), 3).permute(0, 2, 3, 1).detach().cpu().numpy() * 255).astype('uint8')
+                pred_np = (pred.permute(0, 2, 3, 1).detach().cpu().numpy() * 255).astype('uint8')
+                merged_img = (info['merged_tea'].permute(0, 2, 3, 1).detach().cpu().numpy() * 255).astype('uint8')
+                flow0 = info['flow'].permute(0, 2, 3, 1).detach().cpu().numpy()
+                flow1 = info['flow_tea'].permute(0, 2, 3, 1).detach().cpu().numpy()
+                for j in range(min(5, gt_np.shape[0])):
+                    imgs_vis = np.concatenate((merged_img[j], pred_np[j], gt_np[j]), 1)[:, :, ::-1]
+                    writer.add_image(str(j) + '/img', imgs_vis, step, dataformats='HWC')
+                    writer.add_image(str(j) + '/flow', np.concatenate((flow2rgb(flow0[j]), flow2rgb(flow1[j])), 1), step, dataformats='HWC')
+                    writer.add_image(str(j) + '/mask', mask[j], step, dataformats='HWC')
+                writer.flush()
+            print('epoch:{} {}/{} time:{:.2f}+{:.2f} loss_l1:{:.4e}'.format(
+                epoch, step, len(train_loader), data_time_interval, train_time_interval, info['loss_l1']))
 
         # --- Validate ---
-        model.eval()
-        val_psnrs = []
-        with torch.no_grad():
-            for batch in val_loader:
-                input_tensor = batch["input_tensor"].to(device)
-                gt = batch["gt"].to(device)
-                imgs = input_tensor[:, :6]
-                pred, _ = model.update(imgs, input_tensor, gt, training=False)
-                val_psnrs.append(psnr(pred, gt))
-
-        mean_psnr = float(np.mean(val_psnrs))
+        mean_psnr = evaluate(model, val_loader, nr_eval, writer_val)
+        nr_eval += 1
         mean_train_loss = float(np.mean(train_losses))
         ep_time = time.time() - t_ep
 
@@ -361,7 +287,8 @@ def train_phase1(args, device: torch.device):
             f"  [{ep_time:.1f}s]"
         )
 
-        logger.log(epoch, {"train_loss": mean_train_loss, "val_psnr": mean_psnr})
+        writer.add_scalar('train/loss', mean_train_loss, epoch)
+        writer.add_scalar('val/psnr', mean_psnr, epoch)
 
         is_best = mean_psnr > best_psnr
         if is_best:
@@ -385,7 +312,8 @@ def train_phase1(args, device: torch.device):
             print(f"  Early stopping after {patience} epochs without improvement.")
             break
 
-    logger.close()
+    writer.close()
+    writer_val.close()
     print(f"\nPhase 1 complete. Best val PSNR: {best_psnr:.2f} dB")
     return model, ckpt_dir / "coarse_best.pth"
 

@@ -37,6 +37,7 @@ class IFBlock(nn.Module):
         self.lastconv = nn.ConvTranspose2d(c, 5, 4, 2, 1)
 
     def forward(self, x, flow, scale):
+        H, W = x.shape[2], x.shape[3]
         if scale != 1:
             x = F.interpolate(x, scale_factor = 1. / scale, mode="bilinear", align_corners=False)
         if flow != None:
@@ -46,6 +47,9 @@ class IFBlock(nn.Module):
         x = self.convblock(x) + x
         tmp = self.lastconv(x)
         tmp = F.interpolate(tmp, scale_factor = scale * 2, mode="bilinear", align_corners=False)
+        if tmp.shape[2] != H or tmp.shape[3] != W:
+            tmp = F.interpolate(tmp, size=(H, W), mode="bilinear", align_corners=False)
+        # tmp = F.interpolate(tmp, size=(H, W), mode="bilinear", align_corners=False)
         flow = tmp[:, :4] * scale * 2
         mask = tmp[:, 4:5]
         return flow, mask
@@ -75,6 +79,7 @@ class IFNet(nn.Module):
         warped_img1 = img1
         flow = None 
         loss_distill = 0
+        loss_depth = 0
         stu = [self.block0, self.block1, self.block2]
         for i in range(3):
             if flow != None:
@@ -106,11 +111,13 @@ class IFNet(nn.Module):
                 loss_distill += (((flow_teacher.detach() - flow_list[i]) ** 2).mean(1, True) ** 0.5 * loss_mask).mean()
         c0 = self.contextnet(img0, flow[:, :2])
         c1 = self.contextnet(img1, flow[:, 2:4])
-        d0 = self.depth_contextnet(depth0, flow[:, :2])
-        d1 = self.depth_contextnet(depth1, flow[:, 2:4])
+        # depth warping and loss
+        d0 = warp(depth0, flow[:, :2])
+        d1 = warp(depth1, flow[:, 2:4])
         depth_pred = d0 * mask_list[2] + d1 * (1 - mask_list[2])
         loss_depth = F.l1_loss(depth_pred, depth_gt)
-        tmp = self.unet(img0, img1, warped_img0, warped_img1, mask, flow, c0, c1, d0, d1)
+        # get final result
+        tmp = self.unet(img0, img1, warped_img0, warped_img1, mask, flow, c0, c1)
         res = tmp[:, :3] * 2 - 1
         merged[2] = torch.clamp(merged[2] + res, 0, 1)
         return flow_list, mask_list[2], merged, flow_teacher, merged_teacher, loss_distill, loss_depth

@@ -43,10 +43,12 @@ CAMERAS = ["front", "left_fwd", "left_bwd", "right_fwd", "right_bwd", "rear"]
 # Utility helpers
 # ---------------------------------------------------------------------------
 
-def _load_image(path: Path, as_float: bool = True) -> np.ndarray:
+def _load_image(path: Path, size: Optional[Tuple[int, int]] = None, as_float: bool = True) -> np.ndarray:
     """Load JPEG → (H, W, 3) RGB float32 in [0,1] or uint8."""
     img = cv2.imread(str(path), cv2.IMREAD_COLOR)
     img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+    if size is not None:
+        img = cv2.resize(img, (size[1], size[0]), interpolation=cv2.INTER_AREA)
     if as_float:
         return img.astype(np.float32) / 255.0
     return img
@@ -155,6 +157,9 @@ class IFNetDataset(Dataset):
         intr = meta["intrinsics"][target_cam]
         H = intr["height"]
         W = intr["width"]
+        H = 512 #(H // 16) * 16
+        W = 1024 #(W // 32) * 32
+            
         K = get_intrinsic_matrix(intr)
 
         c2w_t0 = np.array(meta["poses_c2w"]["t0"][target_cam], dtype=np.float64)
@@ -166,10 +171,12 @@ class IFNetDataset(Dataset):
             str(sample_dir / "input" / "t0" / f"{target_cam}.jpg"), cv2.IMREAD_COLOR
         )
         img_t0 = cv2.cvtColor(img_t0, cv2.COLOR_BGR2RGB).astype(np.float32) / 255.0
+        img_t0 = cv2.resize(img_t0, (W, H), interpolation=cv2.INTER_AREA)
         img_t1 = cv2.imread(
             str(sample_dir / "input" / "t1" / f"{target_cam}.jpg"), cv2.IMREAD_COLOR
         )
         img_t1 = cv2.cvtColor(img_t1, cv2.COLOR_BGR2RGB).astype(np.float32) / 255.0
+        img_t1 = cv2.resize(img_t1, (W, H), interpolation=cv2.INTER_AREA)
 
         if cache_hit:
             return {
@@ -178,6 +185,8 @@ class IFNetDataset(Dataset):
                 "target_depth": cached["target_depth"].astype(np.float32),
                 "img_t0": img_t0,
                 "img_t1": img_t1,
+                "H": H,
+                "W": W,
             }
 
         # --- Compute on-the-fly ---
@@ -206,6 +215,8 @@ class IFNetDataset(Dataset):
             "target_depth": depth_tgt_norm,
             "img_t0": img_t0,
             "img_t1": img_t1,
+            "H": H,
+            "W": W,
         }
 
     # ------------------------------------------------------------------
@@ -232,6 +243,7 @@ class IFNetDataset(Dataset):
         depth_t0 = geo["depth_t0"]      # (H, W)
         depth_t1 = geo["depth_t1"]
         tgt_depth = geo["target_depth"] # (H, W)
+        H, W = geo["H"], geo["W"]
 
         # Convert images/masks to (C, H, W)
         def chw(x):
@@ -241,6 +253,10 @@ class IFNetDataset(Dataset):
 
         arr_img_t0 = chw(img_t0)       # (3, H, W)
         arr_img_t1 = chw(img_t1)
+
+        depth_t0 = cv2.resize(depth_t0, (W, H), interpolation=cv2.INTER_NEAREST)
+        depth_t1 = cv2.resize(depth_t1, (W, H), interpolation=cv2.INTER_NEAREST)
+        tgt_depth = cv2.resize(tgt_depth, (W, H), interpolation=cv2.INTER_NEAREST)
         arr_dt0 = chw(depth_t0)        # (1, H, W)
         arr_dt1 = chw(depth_t1)
         arr_tdepth = chw(tgt_depth)    # (1, H, W)
@@ -249,47 +265,38 @@ class IFNetDataset(Dataset):
         if self.is_train:
             intr = meta["intrinsics"][target_cam]   
             gt_path = sample_dir / "target" / f"{target_cam}.jpg"
-            gt = _load_image(gt_path)  # (H, W, 3)
+            gt = _load_image(gt_path, (H, W))  # (H, W, 3)            
             arr_gt = chw(gt)           # (3, H, W)
         else:
             arr_gt = None
 
-        # Temporal reversal augmentation (50% chance)
-        if self.augment and random.random() < 0.5:
-            arr_img_t0, arr_img_t1 = arr_img_t1, arr_img_t0
-            arr_wt0, arr_wt1 = arr_wt1, arr_wt0
-            arr_mt0, arr_mt1 = arr_mt1, arr_mt0
-            arr_dt0, arr_dt1 = arr_dt1, arr_dt0
+        # # Temporal reversal augmentation (50% chance)
+        # if self.augment and random.random() < 0.5:
+        #     arr_img_t0, arr_img_t1 = arr_img_t1, arr_img_t0
+        #     arr_dt0, arr_dt1 = arr_dt1, arr_dt0
 
         # Horizontal flip augmentation (50% chance)
-        if self.augment and random.random() < 0.5:
-            def hflip(a):
-                return a[..., ::-1].copy()
-            arr_img_t0 = hflip(arr_img_t0)
-            arr_img_t1 = hflip(arr_img_t1)
-            arr_wt0 = hflip(arr_wt0)
-            arr_wt1 = hflip(arr_wt1)
-            arr_mt0 = hflip(arr_mt0)
-            arr_mt1 = hflip(arr_mt1)
-            arr_dt0 = hflip(arr_dt0)
-            arr_dt1 = hflip(arr_dt1)
-            arr_tdepth = hflip(arr_tdepth)
-            arr_alpha = hflip(arr_alpha)
-            if arr_gt is not None:
-                arr_gt = hflip(arr_gt)
+        # if self.augment and random.random() < 0.5:
+        #     def hflip(a):
+        #         return a[..., ::-1].copy()
+        #     arr_img_t0 = hflip(arr_img_t0)
+        #     arr_img_t1 = hflip(arr_img_t1)
+        #     arr_dt0 = hflip(arr_dt0)
+        #     arr_dt1 = hflip(arr_dt1)
+        #     arr_tdepth = hflip(arr_tdepth)
+        #     if arr_gt is not None:
+        #         arr_gt = hflip(arr_gt)
 
         # Colour jitter augmentation (independent per channel)
-        if self.augment and random.random() < 0.5:
-            brightness = random.uniform(0.8, 1.2)
-            contrast = random.uniform(0.8, 1.2)
-            for arr in [arr_img_t0, arr_img_t1, arr_wt0, arr_wt1]:
-                arr *= brightness
-                mean = arr.mean(axis=(1, 2), keepdims=True)
-                arr[:] = (arr - mean) * contrast + mean
-            np.clip(arr_img_t0, 0, 1, out=arr_img_t0)
-            np.clip(arr_img_t1, 0, 1, out=arr_img_t1)
-            np.clip(arr_wt0, 0, 1, out=arr_wt0)
-            np.clip(arr_wt1, 0, 1, out=arr_wt1)
+        # if self.augment and random.random() < 0.5:
+        #     brightness = random.uniform(0.8, 1.2)
+        #     contrast = random.uniform(0.8, 1.2)
+        #     for arr in [arr_img_t0, arr_img_t1]:
+        #         arr *= brightness
+        #         mean = arr.mean(axis=(1, 2), keepdims=True)
+        #         arr[:] = (arr - mean) * contrast + mean
+        #     np.clip(arr_img_t0, 0, 1, out=arr_img_t0)
+        #     np.clip(arr_img_t1, 0, 1, out=arr_img_t1)
 
         # Concatenate into the 18-channel input tensor
         # Order: img_t0(3), img_t1(3), depth_t0(1), depth_t1(1),

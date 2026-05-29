@@ -2,6 +2,8 @@ import torch
 import torch.nn as nn
 import numpy as np
 from torch.optim import AdamW
+from torch.optim.lr_scheduler import CosineAnnealingLR
+
 import torch.optim as optim
 import itertools
 from model.warplayer import warp
@@ -16,13 +18,14 @@ from model.refine import *
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     
 class RifeModel:
-    def __init__(self, local_rank=-1, arbitrary=False):
+    def __init__(self, total_steps, lr=1e-6, local_rank=-1, arbitrary=False):
         if arbitrary == True:
             self.flownet = IFNet_m()
         else:
             self.flownet = IFNet()
         self.device()
-        self.optimG = AdamW(self.flownet.parameters(), lr=1e-6, weight_decay=1e-3) # use large weight decay may avoid NaN loss
+        self.optimG = AdamW(self.flownet.parameters(), lr=lr, weight_decay=1e-3) # use large weight decay may avoid NaN loss
+        self.scheduler = CosineAnnealingLR(self.optimG, T_max=total_steps, eta_min=lr * 0.01)
         self.epe = EPE()
         self.lap = LapLoss()
         self.sobel = SOBEL()
@@ -66,9 +69,7 @@ class RifeModel:
             flow2, mask2, merged2, flow_teacher2, merged_teacher2, loss_distill2 = self.flownet(imgs.flip(2).flip(3), scale_list, timestep=timestep)
             return (merged[2] + merged2[2].flip(2).flip(3)) / 2
     
-    def update(self, inputs, gt, learning_rate=0, mul=1, training=True, flow_gt=None):
-        for param_group in self.optimG.param_groups:
-            param_group['lr'] = learning_rate
+    def update(self, inputs, gt, mul=1, training=True, flow_gt=None):
         img0 = inputs[:, :3]
         img1 = inputs[:, 3:6]
         depth_t0 = inputs[:, 6:7]
@@ -86,6 +87,7 @@ class RifeModel:
             loss_G = loss_l1 + loss_tea + loss_distill * 0.01 + loss_depth * 0.1  # when training RIFEm, the weight of loss_distill should be 0.005 or 0.002
             loss_G.backward()
             self.optimG.step()
+            self.scheduler.step()
         else:
             flow_teacher = flow[2]
         return merged[2], {
