@@ -128,7 +128,7 @@ class IFNet(nn.Module):
         warped_depth0 = depth0
         warped_depth1 = depth1        
         flow = None 
-        loss_distill = 0.0
+        loss_distill = torch.Tensor([0.0]).to(x.device)
         block = [self.block0, self.block1, self.block2, self.block3]
         for i in range(4):
             if flow is None:
