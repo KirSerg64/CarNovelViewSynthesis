@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 import numpy as np
 from torch.optim import AdamW
-from torch.optim.lr_scheduler import CosineAnnealingLR
+from torch.optim.lr_scheduler import CosineAnnealingLR, LinearLR, SequentialLR
 
 import torch.optim as optim
 import itertools
@@ -25,13 +25,25 @@ class RifeModel:
             self.flownet = IFNet()
         self.device()
         self.optimG = AdamW(self.flownet.parameters(), lr=lr, weight_decay=1e-3) # use large weight decay may avoid NaN loss
-        self.scheduler = CosineAnnealingLR(self.optimG, T_max=total_steps, eta_min=lr * 0.01)
+        self.warmup_scheduler = LinearLR(
+            self.optimG, 
+            start_factor=0.1, 
+            end_factor=1.0, 
+            total_iters=args.warm_up
+        )
+        self.main_scheduler  = CosineAnnealingLR(self.optimG, T_max=total_steps, eta_min=lr * 0.01)
+        self.scheduler = SequentialLR(
+            self.optimG, 
+            schedulers=[self.warmup_scheduler, self.main_scheduler], 
+            milestones=[args.warm_up]
+        )        
         self.epe = EPE()
         self.lap = LapLoss()
         self.sobel = SOBEL()
         self.max_depth = args.max_depth
         if local_rank != -1:
             self.flownet = DDP(self.flownet, device_ids=[local_rank], output_device=local_rank)
+        self.loss_depth_alpha = args.loss_depth_alpha
 
     def train(self):
         self.flownet.train()
@@ -87,7 +99,7 @@ class RifeModel:
         loss_depth = F.l1_loss(depth_pred / self.max_depth, depth_gt / self.max_depth)
         if training:
             self.optimG.zero_grad()
-            loss_G = loss_l1 + loss_tea + loss_distill * 0.01 + loss_depth * 0.1  # when training RIFEm, the weight of loss_distill should be 0.005 or 0.002
+            loss_G = loss_l1 + loss_tea + loss_distill * 0.01 + loss_depth * self.loss_depth_alpha  # when training RIFEm, the weight of loss_distill should be 0.005 or 0.002
             loss_G.backward()
             self.optimG.step()
             self.scheduler.step()

@@ -132,6 +132,7 @@ def evaluate(model, val_loader, nr_eval, writer_val):
     loss_l1_list = []
     loss_distill_list = []
     loss_tea_list = []
+    loss_depth_list = []
     psnr_list = []
     psnr_list_teacher = []
     time_stamp = time.time()
@@ -144,6 +145,7 @@ def evaluate(model, val_loader, nr_eval, writer_val):
         loss_l1_list.append(info['loss_l1'].cpu().numpy())
         loss_tea_list.append(info['loss_tea'].cpu().numpy())
         loss_distill_list.append(info['loss_distill'].cpu().numpy())
+        loss_depth_list.append(info['loss_depth'].cpu().numpy())
         for j in range(gt.shape[0]):
             psnr_val = -10 * math.log10(torch.mean((gt[j] - pred[j]) * (gt[j] - pred[j])).cpu().data)
             psnr_list.append(psnr_val)
@@ -165,6 +167,7 @@ def evaluate(model, val_loader, nr_eval, writer_val):
     if writer_val is not None:
         writer_val.add_scalar('psnr', np.array(psnr_list).mean(), nr_eval)
         writer_val.add_scalar('psnr_teacher', np.array(psnr_list_teacher).mean(), nr_eval)
+        writer_val.add_scalar('loss_depth', np.array(loss_depth_list).mean(), nr_eval)
     return float(np.array(psnr_list).mean()) if psnr_list else 0.0
 
 
@@ -252,12 +255,13 @@ def train_phase1(args, device: torch.device):
 
             train_time_interval = time.time() - time_stamp
             time_stamp = time.time()
-            if step % 100 == 1:
+            if step % 10 == 1:
                 lr_now = model.optimG.param_groups[0]['lr']
                 writer.add_scalar('learning_rate', lr_now, epoch * step_per_epoch + step)
                 writer.add_scalar('loss/l1', info['loss_l1'], step)
                 writer.add_scalar('loss/tea', info['loss_tea'], step)
                 writer.add_scalar('loss/distill', info['loss_distill'], step)
+                writer.add_scalar('loss/depth', info['loss_depth'], step)
             if step % 1000 == 1:
                 gt_np = (gt.permute(0, 2, 3, 1).detach().cpu().numpy() * 255).astype('uint8')
                 mask = (torch.cat((info['mask'], info['mask_tea']), 3).permute(0, 2, 3, 1).detach().cpu().numpy() * 255).astype('uint8')
@@ -338,6 +342,8 @@ def parse_args():
     p.add_argument("--epochs", type=int, default=300, help="Phase 1 epochs")
     p.add_argument("--batch-size", type=int, default=4, help="Training batch size")
     p.add_argument("--lr", type=float, default=1e-5, help="learning rate")
+    p.add_argument("--warm-up", type=int, default=500, help="warm-up steps")
+    p.add_argument("--loss-depth-alpha", type=float, default=0.1, help="weight for depth loss")
     p.add_argument("--max-depth", type=float, default=80.0, help="Depth normalisation range (m)")
     p.add_argument("--patience", type=int, default=40, help="Early stopping patience (epochs)")
     p.add_argument("--num-workers", type=int, default=4, help="DataLoader workers")

@@ -78,7 +78,6 @@ class IFNet(nn.Module):
         warped_img1 = img1
         flow = None 
         loss_distill = 0
-        loss_depth = 0
         stu = [self.block0, self.block1, self.block2]
         for i in range(3):
             if flow != None:
