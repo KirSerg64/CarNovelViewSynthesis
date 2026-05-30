@@ -113,7 +113,7 @@ class Logger:
             self._tb.close()
 
 
-device = torch.device("cuda")
+device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
 
 log_path = 'train_log'
 
@@ -154,8 +154,8 @@ def evaluate(model, val_loader, nr_eval, writer_val):
         gt_np = (gt.permute(0, 2, 3, 1).cpu().numpy() * 255).astype('uint8')
         pred_np = (pred.permute(0, 2, 3, 1).cpu().numpy() * 255).astype('uint8')
         merged_np = (merged_img.permute(0, 2, 3, 1).cpu().numpy() * 255).astype('uint8')
-        if merged_img.shape[3] == 1:
-            merged_img = np.repeat(merged_img, 3, axis=3)        
+        if merged_np.shape[3] == 1:
+            merged_np = np.repeat(merged_np, 3, axis=3)        
         flow0 = info['flow'].permute(0, 2, 3, 1).cpu().numpy()
         flow1 = info['flow_tea'].permute(0, 2, 3, 1).cpu().numpy()
         if i == 0 and writer_val is not None:
