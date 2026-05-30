@@ -4,6 +4,8 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torchvision.models as models
 
+from nvs_model.losses import _ssim
+
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 
@@ -119,6 +121,15 @@ class VGGPerceptualLoss(torch.nn.Module):
                 loss += weights[k] * (X - Y.detach()).abs().mean() * 0.1
                 k += 1
         return loss
+
+class SSIM(nn.Module):
+    def __init__(self):
+        super(SSIM, self).__init__()
+
+    def forward(self, flow, gt):
+        loss_map = 1 - _ssim(flow, gt)
+        return loss_map.mean()
+
 
 if __name__ == '__main__':
     img0 = torch.zeros(3, 3, 256, 256).float().to(device)

@@ -14,6 +14,7 @@ import torch.nn.functional as F
 from model.loss import *
 from model.laplacian import *
 from model.refine import *
+from nvs_model.losses import _ssim
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     
@@ -91,25 +92,41 @@ class RifeModel:
             self.eval()
         flow, mask, merged, flow_teacher, merged_teacher, loss_distill, depth_pred = self.flownet(
             torch.cat((inputs, gt), 1), scale=[8, 4, 2, 1])
-        loss_l1 = (self.lap(merged[3], gt)).mean()
-        loss_tea = (self.lap(merged[3], gt)).mean()# if merged_teacher is not None else 0.0
-        loss_depth = F.l1_loss(depth_pred / self.max_depth, depth_gt / self.max_depth)
+        pred = merged[-1]
+
+        loss_l1 = (self.lap(pred, gt)).mean()
+        # loss_tea = (self.lap(merged[3], gt)).mean()# if merged_teacher is not None else 0.0
+        loss_smooth = self.sobel(flow[-1], flow[-1]*0).mean()
+        # loss_depth = F.l1_loss(depth_pred / self.max_depth, depth_gt / self.max_depth)
+
+        # --- SSIM ---
+        l_ssim = 1.0 - _ssim(pred, gt)
+        # --- Depth-Weighted L1 ---
+        # weight = 1 / (1 + depth); normalise depth to reasonable range first
+        max_d = depth_gt[depth_gt > 0].quantile(0.95).clamp(min=1.0) \
+            if (depth_gt > 0).any() \
+            else torch.tensor(self.max_depth, device=depth_gt.device)
+        d_norm = depth_gt / max_d.detach()
+        w_depth = 1.0 / (1.0 + d_norm.clamp(min=0))  # (B,1,H,W)
+        l_depth_l1 = (w_depth * (pred - gt).abs()).mean()
+
         if training:
             self.optimG.zero_grad()
-            loss_G = loss_l1 + loss_tea + loss_distill * 0.01 + loss_depth * self.loss_depth_alpha  # when training RIFEm, the weight of loss_distill should be 0.005 or 0.002
+            loss_G = loss_l1 + loss_smooth + 0.8 * l_ssim + l_depth_l1 * self.loss_depth_alpha  # when training RIFEm, the weight of loss_distill should be 0.005 or 0.002
             loss_G.backward()
             self.optimG.step()
             self.scheduler.step()
         else:
             flow_teacher = flow[3]
-        return merged[3], {
+        return merged[-1], {
             'merged_tea': depth_pred,
             'mask': mask,
             'mask_tea': mask,
-            'flow': flow[3][:, :2],
+            'flow': flow[-1][:, :2],
             'flow_tea': flow[0][:, :2],
             'loss_l1': loss_l1,
-            'loss_tea': loss_tea,
+            'loss_ssim': l_ssim,
+            'loss_tea': loss_smooth,
             'loss_distill': loss_distill,
-            'loss_depth': loss_depth
+            'loss_depth': l_depth_l1
         }
