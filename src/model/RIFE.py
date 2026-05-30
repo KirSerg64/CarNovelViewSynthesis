@@ -14,7 +14,7 @@ import torch.nn.functional as F
 from model.loss import *
 from model.laplacian import *
 from model.refine import *
-from nvs_model.losses import _ssim
+from model.utils_loss import _ssim
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     
