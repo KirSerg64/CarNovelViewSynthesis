@@ -8,8 +8,8 @@ import torch.optim as optim
 import itertools
 from model.warplayer import warp
 from torch.nn.parallel import DistributedDataParallel as DDP
-from model.IFNet import *
-from model.IFNet_m import *
+# from model.IFNet import *
+from model.IFNet_HDv3 import *
 import torch.nn.functional as F
 from model.loss import *
 from model.laplacian import *
@@ -19,10 +19,7 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     
 class RifeModel:
     def __init__(self, args, total_steps, lr=1e-6, local_rank=-1, arbitrary=False):
-        if arbitrary == True:
-            self.flownet = IFNet_m()
-        else:
-            self.flownet = IFNet()
+        self.flownet = IFNet()
         self.device()
         self.optimG = AdamW(self.flownet.parameters(), lr=lr, weight_decay=1e-3) # use large weight decay may avoid NaN loss
         self.warmup_scheduler = LinearLR(
@@ -93,9 +90,9 @@ class RifeModel:
         else:
             self.eval()
         flow, mask, merged, flow_teacher, merged_teacher, loss_distill, depth_pred = self.flownet(
-            torch.cat((inputs, gt), 1), scale=[4, 2, 1])
-        loss_l1 = (self.lap(merged[2], gt)).mean()
-        loss_tea = (self.lap(merged_teacher, gt)).mean()
+            torch.cat((inputs, gt), 1), scale=[8, 4, 2, 1])
+        loss_l1 = (self.lap(merged[3], gt)).mean()
+        loss_tea = (self.lap(merged[3], gt)).mean()# if merged_teacher is not None else 0.0
         loss_depth = F.l1_loss(depth_pred / self.max_depth, depth_gt / self.max_depth)
         if training:
             self.optimG.zero_grad()
@@ -104,13 +101,13 @@ class RifeModel:
             self.optimG.step()
             self.scheduler.step()
         else:
-            flow_teacher = flow[2]
-        return merged[2], {
-            'merged_tea': merged_teacher,
+            flow_teacher = flow[3]
+        return merged[3], {
+            'merged_tea': depth_pred,
             'mask': mask,
             'mask_tea': mask,
-            'flow': flow[2][:, :2],
-            'flow_tea': flow_teacher,
+            'flow': flow[3][:, :2],
+            'flow_tea': flow[0][:, :2],
             'loss_l1': loss_l1,
             'loss_tea': loss_tea,
             'loss_distill': loss_distill,

@@ -267,6 +267,8 @@ def train_phase1(args, device: torch.device):
                 mask = (torch.cat((info['mask'], info['mask_tea']), 3).permute(0, 2, 3, 1).detach().cpu().numpy() * 255).astype('uint8')
                 pred_np = (pred.permute(0, 2, 3, 1).detach().cpu().numpy() * 255).astype('uint8')
                 merged_img = (info['merged_tea'].permute(0, 2, 3, 1).detach().cpu().numpy() * 255).astype('uint8')
+                if merged_img.shape[3] == 1:
+                    merged_img = np.repeat(merged_img, 3, axis=3)
                 flow0 = info['flow'].permute(0, 2, 3, 1).detach().cpu().numpy()
                 flow1 = info['flow_tea'].permute(0, 2, 3, 1).detach().cpu().numpy()
                 for j in range(min(5, gt_np.shape[0])):
