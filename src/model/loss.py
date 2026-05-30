@@ -4,7 +4,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torchvision.models as models
 
-from nvs_model.losses import _ssim
+from model.utils_loss import _ssim
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
