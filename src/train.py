@@ -215,7 +215,7 @@ def train_phase1(args, device: torch.device):
     # Model — RifeModel manages its own device and internal optimizer
     step_per_epoch = len(train_loader)
     total_steps = args.epochs * step_per_epoch
-    model = RifeModel(total_steps=total_steps, lr=args.lr)
+    model = RifeModel(args, total_steps=total_steps, lr=args.lr)
     print(f"  Flownet params: {sum(p.numel() for p in model.flownet.parameters()):,}")
 
     ckpt_dir = args.ckpt_dir
@@ -337,7 +337,7 @@ def parse_args():
     # Training hyperparameters
     p.add_argument("--epochs", type=int, default=300, help="Phase 1 epochs")
     p.add_argument("--batch-size", type=int, default=4, help="Training batch size")
-    p.add_argument("--lr", type=float, default=2e-4, help="Phase 1 learning rate")
+    p.add_argument("--lr", type=float, default=1e-5, help="learning rate")
     p.add_argument("--max-depth", type=float, default=80.0, help="Depth normalisation range (m)")
     p.add_argument("--patience", type=int, default=40, help="Early stopping patience (epochs)")
     p.add_argument("--num-workers", type=int, default=4, help="DataLoader workers")

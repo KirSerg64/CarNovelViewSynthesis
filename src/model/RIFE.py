@@ -18,7 +18,7 @@ from model.refine import *
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     
 class RifeModel:
-    def __init__(self, total_steps, lr=1e-6, local_rank=-1, arbitrary=False):
+    def __init__(self, args, total_steps, lr=1e-6, local_rank=-1, arbitrary=False):
         if arbitrary == True:
             self.flownet = IFNet_m()
         else:
@@ -29,6 +29,7 @@ class RifeModel:
         self.epe = EPE()
         self.lap = LapLoss()
         self.sobel = SOBEL()
+        self.max_depth = args.max_depth
         if local_rank != -1:
             self.flownet = DDP(self.flownet, device_ids=[local_rank], output_device=local_rank)
 
@@ -74,14 +75,16 @@ class RifeModel:
         img1 = inputs[:, 3:6]
         depth_t0 = inputs[:, 6:7]
         depth_t1 = inputs[:, 7:8]
+        depth_gt = inputs[:, 8:9]
         if training:
             self.train()
         else:
             self.eval()
-        flow, mask, merged, flow_teacher, merged_teacher, loss_distill, loss_depth = self.flownet(
+        flow, mask, merged, flow_teacher, merged_teacher, loss_distill, depth_pred = self.flownet(
             torch.cat((inputs, gt), 1), scale=[4, 2, 1])
         loss_l1 = (self.lap(merged[2], gt)).mean()
         loss_tea = (self.lap(merged_teacher, gt)).mean()
+        loss_depth = F.l1_loss(depth_pred / self.max_depth, depth_gt / self.max_depth)
         if training:
             self.optimG.zero_grad()
             loss_G = loss_l1 + loss_tea + loss_distill * 0.01 + loss_depth * 0.1  # when training RIFEm, the weight of loss_distill should be 0.005 or 0.002

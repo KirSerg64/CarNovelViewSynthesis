@@ -70,7 +70,6 @@ class IFNet(nn.Module):
         img1 = x[:, 3:6]
         depth0 = x[:, 6:7]
         depth1 = x[:, 7:8]
-        depth_gt = x[:, 8:9]
         gt = x[:, 9:12] # In inference time, gt is None
         flow_list = []
         merged = []
@@ -115,12 +114,11 @@ class IFNet(nn.Module):
         d0 = warp(depth0, flow[:, :2])
         d1 = warp(depth1, flow[:, 2:4])
         depth_pred = d0 * mask_list[2] + d1 * (1 - mask_list[2])
-        loss_depth = F.l1_loss(depth_pred, depth_gt)
         # get final result
         tmp = self.unet(img0, img1, warped_img0, warped_img1, mask, flow, c0, c1)
         res = tmp[:, :3] * 2 - 1
         merged[2] = torch.clamp(merged[2] + res, 0, 1)
-        return flow_list, mask_list[2], merged, flow_teacher, merged_teacher, loss_distill, loss_depth
+        return flow_list, mask_list[2], merged, flow_teacher, merged_teacher, loss_distill, depth_pred
 
 
 if __name__ == "__main__":
