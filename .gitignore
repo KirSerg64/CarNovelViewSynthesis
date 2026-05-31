@@ -1,8 +1,9 @@
 submission/
 
 baseline_files.zip
-baseline_files/baseline_ensemble/ECCV2022-RIFE/
 baseline_files/baseline_ensemble/train_log/*.pkl
+logs/
+output/
 
 __pycache__/
 *.py[cod]
@@ -10,9 +11,11 @@ __pycache__/
 *.pyd
 *.zip
 
+.vscode/
 .venv/
 venv/
 env/
+baseline_files/baseline_ensemble/thirdparty/ECCV2022-RIFE/*
 
 hyper_tune/
 
