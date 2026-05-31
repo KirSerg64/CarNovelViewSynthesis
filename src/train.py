@@ -139,8 +139,9 @@ def evaluate(model, val_loader, nr_eval, writer_val):
     for i, batch in enumerate(val_loader):
         input_tensor = batch["input_tensor"].to(device, non_blocking=True)
         gt = batch["gt"].to(device, non_blocking=True)
+        ts_alpha = batch["alpha"].to(device, non_blocking=True)
         with torch.no_grad():
-            pred, info = model.update(input_tensor, gt, training=False)
+            pred, info = model.update(input_tensor, gt, ts_alpha, training=False)
             merged_img = info['merged_tea']
         loss_l1_list.append(info['loss_l1'].cpu().numpy())
         loss_tea_list.append(info['loss_tea'].cpu().numpy())
@@ -251,8 +252,9 @@ def train_phase1(args, device: torch.device):
 
             input_tensor = batch["input_tensor"].to(device, non_blocking=True)
             gt = batch["gt"].to(device, non_blocking=True)
+            ts_alpha = batch["alpha"].to(device, non_blocking=True)
 
-            pred, info = model.update(input_tensor, gt, training=True)
+            pred, info = model.update(input_tensor, gt, ts_alpha, training=True)
             train_losses.append(info['loss_l1'].item())
 
             train_time_interval = time.time() - time_stamp

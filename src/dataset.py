@@ -260,6 +260,7 @@ class IFNetDataset(Dataset):
         arr_dt0 = chw(depth_t0)        # (1, H, W)
         arr_dt1 = chw(depth_t1)
         arr_tdepth = chw(tgt_depth)    # (1, H, W)
+        arr_alpha = np.full_like(arr_tdepth, alpha)  # (1, H, W)
 
         # GT
         if self.is_train:
@@ -307,12 +308,14 @@ class IFNetDataset(Dataset):
             arr_dt0,        # 1
             arr_dt1,        # 1
             arr_tdepth,     # 1
-        ], axis=0)  # (9, H, W)
+            arr_alpha,      # 1
+        ], axis=0)  # (10, H, W)
 
         # Convert to tensors
         sample = {
             "input_tensor": torch.from_numpy(input_tensor.copy()),
             "sample_id": sample_id,
+            "alpha": torch.tensor(alpha, dtype=torch.float32),
         }
 
         if arr_gt is not None:

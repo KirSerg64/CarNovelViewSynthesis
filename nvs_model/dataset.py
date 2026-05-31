@@ -336,15 +336,15 @@ class NVSDataset(Dataset):
         ], axis=0)  # (18, H, W)
 
         # Random crop
-        if self.crop_size is not None:
-            all_arrs = [input_tensor, arr_tdepth]
-            if arr_gt is not None:
-                all_arrs.append(arr_gt)
-            all_arrs = _random_crop(all_arrs, self.crop_size)
-            input_tensor = all_arrs[0]
-            arr_tdepth = all_arrs[1]
-            if arr_gt is not None:
-                arr_gt = all_arrs[2]
+        # if self.crop_size is not None:
+        #     all_arrs = [input_tensor, arr_tdepth]
+        #     if arr_gt is not None:
+        #         all_arrs.append(arr_gt)
+        #     all_arrs = _random_crop(all_arrs, self.crop_size)
+        #     input_tensor = all_arrs[0]
+        #     arr_tdepth = all_arrs[1]
+        #     if arr_gt is not None:
+        #         arr_gt = all_arrs[2]
 
         # Warped blend (simple geometric fallback): alpha blend of warps.
         # Use slices of the (possibly cropped) input_tensor so that

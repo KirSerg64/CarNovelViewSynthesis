@@ -80,7 +80,7 @@ class RifeModel:
             flow2, mask2, merged2, flow_teacher2, merged_teacher2, loss_distill2 = self.flownet(imgs.flip(2).flip(3), scale_list, timestep=timestep)
             return (merged[2] + merged2[2].flip(2).flip(3)) / 2
     
-    def update(self, inputs, gt, mul=1, training=True, flow_gt=None):
+    def update(self, inputs, gt, ts_alpha, mul=1, training=True, flow_gt=None):
         img0 = inputs[:, :3]
         img1 = inputs[:, 3:6]
         depth_t0 = inputs[:, 6:7]
@@ -91,7 +91,7 @@ class RifeModel:
         else:
             self.eval()
         flow, mask, merged, flow_teacher, merged_teacher, loss_distill, depth_pred = self.flownet(
-            torch.cat((inputs, gt), 1), scale=[8, 4, 2, 1])
+            torch.cat((inputs, gt), 1), scale=[8, 4, 2, 1], timestep=ts_alpha, training=training)
         pred = merged[-1]
 
         loss_l1 = (self.lap(pred, gt)).mean()

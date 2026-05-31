@@ -108,13 +108,13 @@ class IFNet(nn.Module):
         self.unet = Unet()
 
     def forward(self, x, scale=[8,4,2,1], timestep=0.5, training=False, fastmode=True, ensemble=False):
-        if training == False:
-            img0 = x[:, :3]
-            img1 = x[:, 3:6]
+        img0 = x[:, :3]
+        img1 = x[:, 3:6]        
         if not torch.is_tensor(timestep):
             timestep = (x[:, :1].clone() * 0 + 1) * timestep
         else:
-            timestep = timestep.repeat(1, 1, img0.shape[2], img0.shape[3])
+            timestep = x[:, 9:10]
+            # timestep = timestep.repeat(1, 1, img0.shape[2], img0.shape[3])
         f0 = self.encode(img0[:, :3])
         f1 = self.encode(img1[:, :3])
         depth0 = x[:, 6:7]
